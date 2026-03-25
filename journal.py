@@ -13,7 +13,6 @@ def load_config():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(script_dir, "config.yaml")
     
-    # Default fallback values
     defaults = {
         'storage': {
             'base_dir': "~/journals",
@@ -29,15 +28,10 @@ def load_config():
         with open(config_path, 'r') as f:
             user_config = yaml.safe_load(f)
             if user_config:
-                # Deep merge storage specifically
-                if 'storage' in user_config:
-                    defaults['storage'].update(user_config['storage'])
-                if 'editor' in user_config:
-                    defaults['editor'].update(user_config['editor'])
-                if 'processing' in user_config:
-                    defaults['processing'].update(user_config['processing'])
+                if 'storage' in user_config: defaults['storage'].update(user_config['storage'])
+                if 'editor' in user_config: defaults['editor'].update(user_config['editor'])
+                if 'processing' in user_config: defaults['processing'].update(user_config['processing'])
     
-    # Expand home tilde (~) in paths
     defaults['storage']['base_dir'] = os.path.expanduser(defaults['storage']['base_dir'])
     return defaults
 
@@ -48,17 +42,14 @@ ARCHIVE_DIR = os.path.join(BASE_DIR, CONFIG['storage']['archive_dir'])
 TERMINAL_EDITOR = CONFIG['editor']['command']
 STOP_WORDS = set(CONFIG['processing']['stop_words'])
 
-# Ensure core directories exist
 os.makedirs(BASE_DIR, exist_ok=True)
 os.makedirs(ARCHIVE_DIR, exist_ok=True)
 
 # --- 🛠️  Helper Functions ---
 
 def get_daily_dir(date_obj):
-    year = date_obj.strftime("%Y")
-    month = date_obj.strftime("%m")
-    day_folder = date_obj.strftime("%Y-%m-%d")
-    target_dir = os.path.join(BASE_DIR, year, month, day_folder)
+    year, month, day = date_obj.strftime("%Y"), date_obj.strftime("%m"), date_obj.strftime("%Y-%m-%d")
+    target_dir = os.path.join(BASE_DIR, year, month, day)
     os.makedirs(target_dir, exist_ok=True)
     return target_dir
 
@@ -108,10 +99,8 @@ def manage_day():
                     data = yaml.safe_load(f)
                     backups = sorted(glob.glob(f"{path}.bak_*"))
                     history_chain = [yaml.safe_load(open(b)) for b in backups]
-                    
                     marker = "⭐ [FINAL]" if data['metadata'].get('is_final') else "✅ [CURRENT]"
-                    reason = data['metadata'].get('change_reason', 'Initial Version')
-                    print(f"\n{i}. 🕒 {data['metadata']['time']} {marker} | 🏷️  {reason}")
+                    print(f"\n{i}. 🕒 {data['metadata']['time']} {marker} | 🏷️  {data['metadata'].get('change_reason', 'Initial')}")
                     print(f"   {data['summary'].replace(chr(10), chr(10)+'   ')}")
                     print("-" * 30)
                     entry_map.append({'path': path, 'lineage': history_chain + [data]})
@@ -122,16 +111,13 @@ def manage_day():
                 backups = sorted(glob.glob(f"{path}.bak_*"))
                 with open(path, 'r') as f: current_data = yaml.safe_load(f)
                 history_chain = [yaml.safe_load(open(b)) for b in backups]
-                
                 root_data = history_chain[0] if history_chain else current_data
                 print(f"\n{i}. 📂 Root Created: {root_data['metadata']['time']}")
                 print(f"   └── {root_data['summary'].replace(chr(10), chr(10)+'       ')}")
-                
                 display_idx = 1
                 if history_chain:
                     for b_data in history_chain[1:]:
-                        msg = b_data['metadata'].get('change_reason', 'Edit')
-                        print(f"       ├── [{i}.{display_idx}] 🏷️  Mod: {msg}")
+                        print(f"       ├── [{i}.{display_idx}] 🏷️  {b_data['metadata'].get('change_reason', 'Edit')}")
                         print(f"       │   └── {b_data['summary'].replace(chr(10), chr(10)+'       │       ')}")
                         display_idx += 1
                     final_m = "⭐ [FINAL]" if current_data['metadata'].get('is_final') else "✅ [CURRENT]"
@@ -140,12 +126,26 @@ def manage_day():
                 entry_map.append({'path': path, 'lineage': history_chain + [current_data]})
 
         print("\n" + "="*65)
-        print("(N) Edit | (N.M) View | (dN) Archive | (fN) Toggle Final")
+        print("(N) Edit | (N.M) View | (dN) Archive | (xN) DELETE | (fN) Toggle Final")
         print("'t' Tree View Toggle | 'p' Purge Backups | 'q' Menu")
         choice = input("\nAction: ").lower()
 
         if choice == 'q': break
         elif choice == 't': show_tree = not show_tree
+        
+        # --- (xN) DELETE LOGIC ---
+        elif choice.startswith('x') and choice[1:].isdigit():
+            idx = int(choice[1:])
+            if 0 < idx <= len(entry_map):
+                target_path = entry_map[idx-1]['path']
+                backups = glob.glob(f"{target_path}.bak_*")
+                print(f"\n⚠️  WARNING: Deleting Entry {idx} and {len(backups)} history files.")
+                confirm = input(f"Type 'yes' to confirm: ").lower()
+                if confirm == 'yes':
+                    if os.path.exists(target_path): os.remove(target_path)
+                    for b in backups: os.remove(b)
+                    print(f"✅ Deleted."); time.sleep(1)
+
         elif choice.startswith('f') and choice[1:].isdigit():
             idx = int(choice[1:])
             if 0 < idx <= len(entry_map):
@@ -153,25 +153,26 @@ def manage_day():
                 with open(target_path, 'r') as f: data = yaml.safe_load(f)
                 data['metadata']['is_final'] = not data['metadata'].get('is_final', False)
                 with open(target_path, 'w') as f: yaml.dump(data, f, sort_keys=False, allow_unicode=True)
+
         elif choice == 'p':
             all_baks = glob.glob(os.path.join(daily_dir, "*.bak_*"))
-            if all_baks:
-                confirm = input(f"⚠️  Purge {len(all_baks)} backups? (y/n): ").lower()
-                if confirm == 'y':
-                    for b in all_baks: os.remove(b)
-                    print("✅ History purged."); time.sleep(1)
+            if all_baks and input(f"⚠️  Purge {len(all_baks)} backups? (y/n): ").lower() == 'y':
+                for b in all_baks: os.remove(b)
+                print("✅ History purged."); time.sleep(1)
+
         elif choice.startswith('d') and choice[1:].isdigit():
             idx = int(choice[1:])
             if 0 < idx <= len(entry_map):
                 target_path = entry_map[idx-1]['path']
-                prefix = datetime.now().strftime('%Y%m%d_%H%M%S')
-                shutil.move(target_path, os.path.join(ARCHIVE_DIR, f"{prefix}_{os.path.basename(target_path)}"))
+                shutil.move(target_path, os.path.join(ARCHIVE_DIR, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{os.path.basename(target_path)}"))
                 print("✅ Archived."); time.sleep(1)
+
         elif '.' in choice:
             try:
                 e_idx, v_idx = map(int, choice.split('.'))
                 open_vim_readonly(entry_map[e_idx-1]['lineage'][v_idx]['summary'])
             except: pass
+
         elif choice.isdigit():
             idx = int(choice)
             if 0 < idx <= len(entry_map):
@@ -182,9 +183,7 @@ def manage_day():
                     reason = input("\nReason for change: ") or "Update"
                     bak_path = f"{target_path}.bak_{old_data['metadata']['time'].replace(':','-')}_v{datetime.now().strftime('%H%M%S')}"
                     with open(bak_path, 'w') as f: yaml.dump(old_data, f)
-                    old_data['summary'] = new_txt
-                    old_data['metadata']['time'] = datetime.now().strftime("%H:%M")
-                    old_data['metadata']['change_reason'] = reason
+                    old_data.update({'summary': new_txt, 'metadata': {**old_data['metadata'], 'time': datetime.now().strftime("%H:%M"), 'change_reason': reason}})
                     with open(target_path, 'w') as f: yaml.dump(old_data, f, sort_keys=False, allow_unicode=True)
                 time.sleep(1)
 
@@ -192,12 +191,11 @@ def write_new_entry():
     now = datetime.now()
     daily_dir = get_daily_dir(now)
     file_path = os.path.join(daily_dir, f"{now.strftime('%H-%M')}.yaml")
-    print(f"\n--- 🖋️  Write a new Journal: {now.strftime('%H:%M')} ---")
+    print(f"\n--- 🖋️  New Journal: {now.strftime('%H:%M')} ---")
     summary = open_vim_and_get_text()
     if summary:
-        is_f = input("Mark as FINAL? (y/n): ").lower() == 'y'
         data = {
-            'metadata': {'date': now.strftime("%Y-%m-%d"), 'time': now.strftime("%H:%M"), 'is_final': is_f, 'change_reason': 'Initial Version'},
+            'metadata': {'date': now.strftime("%Y-%m-%d"), 'time': now.strftime("%H:%M"), 'is_final': input("FINAL? (y/n): ").lower() == 'y', 'change_reason': 'Initial Version'},
             'summary': summary, 'auto_tags': extract_keywords(summary)
         }
         with open(file_path, 'w') as f: yaml.dump(data, f, sort_keys=False, allow_unicode=True)
@@ -212,8 +210,7 @@ def search_logs():
                     try:
                         data = yaml.safe_load(f)
                         if query in data['summary'].lower() or query in data['metadata']['date']:
-                            label = "[ARCH]" if ".archive" in root else ("[BAK]" if ".bak_" in file else "[LIVE]")
-                            print(f"📅 {data['metadata']['date']} | 🕒 {data['metadata']['time']} {label}\n{data['summary']}\n" + "-"*30)
+                            print(f"📅 {data['metadata']['date']} | 🕒 {data['metadata']['time']}\n{data['summary']}\n" + "-"*30)
                     except: continue
     input("[Enter]")
 
@@ -244,7 +241,7 @@ def main():
     while True:
         os.system('clear')
         print("==========================================")
-        print("📂 DEEPAK'S CHRONOLOGICAL JOURNAL")
+        print("📂 DEEPAK'S CHRONOLOGICAL JOURNAL v1.7.0")
         print("==========================================")
         print("1. 🖋️  Write a new Journal\n2. 🛠️  Manage Journals\n3. 🔍 Global Search\n4. ♻️  Archive & Recovery\n5. 🚪 Exit")
         choice = input("\nSelect (1-5): ")

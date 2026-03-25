@@ -33,3 +33,9 @@ External Configuration: Implemented config.yaml loading logic. The script now lo
 Smart Defaults: Added a fallback mechanism that creates a local ~/journals folder if no configuration is found.
 Environment Awareness: Integrated os.path.expanduser to ensure tilde (~) paths work correctly across different macOS user accounts.
 Privacy Guard: Explicitly added config.yaml to the .gitignore recommendation to prevent leaking local file structures to GitHub.
+
+v1.7.0 — Deep Clean Deletion:
+Implemented xN command to permanently delete journals.
+Logic automatically identifies and purges associated .bak_ version history files to prevent orphaned data.
+Added a strict yes confirmation requirement to prevent accidental deletion of critical technical logs.
+Refined the script's visual feedback during deletion to show exactly what files are being destroyed.
