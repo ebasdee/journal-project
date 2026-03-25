@@ -26,3 +26,10 @@ v1.5.0 — Lifecycle & Security
 Archive Vault: Implemented a hidden .archive folder system to move entries out of the active workspace.
 Recovery Engine: Added logic to restore archived entries (and their full histories) back to their original date-based folders.
 Purge Protection: Added the p command to permanently clear local backup files while keeping the latest "Current" version intact.
+
+v1.6.0 — Configuration & Portability
+Dynamic Path Resolution: Removed all hardcoded strings for BASE_DIR and ARCHIVE_DIR.
+External Configuration: Implemented config.yaml loading logic. The script now looks for this file in its own directory.
+Smart Defaults: Added a fallback mechanism that creates a local ~/journals folder if no configuration is found.
+Environment Awareness: Integrated os.path.expanduser to ensure tilde (~) paths work correctly across different macOS user accounts.
+Privacy Guard: Explicitly added config.yaml to the .gitignore recommendation to prevent leaking local file structures to GitHub.

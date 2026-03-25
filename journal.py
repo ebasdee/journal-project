@@ -7,13 +7,52 @@ import glob
 import shutil
 from datetime import datetime
 
-# --- Configuration ---
-BASE_DIR = os.path.expanduser("~/OneDrive - Mavenir Systems, Inc/personal/journals")
-ARCHIVE_DIR = os.path.join(BASE_DIR, ".archive")
-TERMINAL_EDITOR = 'vim' 
-STOP_WORDS = {'the', 'and', 'was', 'for', 'with', 'today', 'went', 'have', 'from', 'this', 'that', 'about', 'after'}
+# --- ⚙️  Configuration Loader ---
+def load_config():
+    """Loads configuration from config.yaml or provides smart defaults."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(script_dir, "config.yaml")
+    
+    # Default fallback values
+    defaults = {
+        'storage': {
+            'base_dir': "~/journals",
+            'archive_dir': ".archive"
+        },
+        'editor': {'command': 'vim'},
+        'processing': {
+            'stop_words': ['the', 'and', 'was', 'for', 'with', 'today', 'went', 'have', 'from', 'this', 'that', 'about', 'after']
+        }
+    }
 
+    if os.path.exists(config_path):
+        with open(config_path, 'r') as f:
+            user_config = yaml.safe_load(f)
+            if user_config:
+                # Deep merge storage specifically
+                if 'storage' in user_config:
+                    defaults['storage'].update(user_config['storage'])
+                if 'editor' in user_config:
+                    defaults['editor'].update(user_config['editor'])
+                if 'processing' in user_config:
+                    defaults['processing'].update(user_config['processing'])
+    
+    # Expand home tilde (~) in paths
+    defaults['storage']['base_dir'] = os.path.expanduser(defaults['storage']['base_dir'])
+    return defaults
+
+# Initialize Global Configuration
+CONFIG = load_config()
+BASE_DIR = CONFIG['storage']['base_dir']
+ARCHIVE_DIR = os.path.join(BASE_DIR, CONFIG['storage']['archive_dir'])
+TERMINAL_EDITOR = CONFIG['editor']['command']
+STOP_WORDS = set(CONFIG['processing']['stop_words'])
+
+# Ensure core directories exist
+os.makedirs(BASE_DIR, exist_ok=True)
 os.makedirs(ARCHIVE_DIR, exist_ok=True)
+
+# --- 🛠️  Helper Functions ---
 
 def get_daily_dir(date_obj):
     year = date_obj.strftime("%Y")
@@ -44,6 +83,8 @@ def open_vim_and_get_text(initial_content=""):
         return content
     return None
 
+# --- 📖 Core Logic Modules ---
+
 def manage_day():
     date_query = input("\nEnter date (YYYY-MM-DD) [Enter for today]: ") or datetime.now().strftime("%Y-%m-%d")
     year, month = date_query[:4], date_query[5:7]
@@ -53,9 +94,9 @@ def manage_day():
     while True:
         os.system('clear')
         if not os.path.exists(daily_dir):
-            print(f"❌ No records for {date_query}."); input("[Enter]"); break
+            print(f"❌ No records found for {date_query}."); input("[Enter]"); break
         files = sorted([f for f in os.listdir(daily_dir) if f.endswith(".yaml")])
-        if not files: print(f"❌ No logs found."); input("[Enter]"); break
+        if not files: print(f"❌ Folder is empty."); input("[Enter]"); break
 
         entry_map = []
         
@@ -66,9 +107,7 @@ def manage_day():
                 with open(path, 'r') as f:
                     data = yaml.safe_load(f)
                     backups = sorted(glob.glob(f"{path}.bak_*"))
-                    history_chain = []
-                    for b in backups:
-                        with open(b, 'r') as bf: history_chain.append(yaml.safe_load(bf))
+                    history_chain = [yaml.safe_load(open(b)) for b in backups]
                     
                     marker = "⭐ [FINAL]" if data['metadata'].get('is_final') else "✅ [CURRENT]"
                     reason = data['metadata'].get('change_reason', 'Initial Version')
@@ -82,32 +121,22 @@ def manage_day():
                 path = os.path.join(daily_dir, fname)
                 backups = sorted(glob.glob(f"{path}.bak_*"))
                 with open(path, 'r') as f: current_data = yaml.safe_load(f)
+                history_chain = [yaml.safe_load(open(b)) for b in backups]
                 
-                history_chain = []
-                for b in backups:
-                    with open(b, 'r') as bf: history_chain.append(yaml.safe_load(bf))
-                
-                # 1. ROOT
                 root_data = history_chain[0] if history_chain else current_data
                 print(f"\n{i}. 📂 Root Created: {root_data['metadata']['time']}")
                 print(f"   └── {root_data['summary'].replace(chr(10), chr(10)+'       ')}")
                 
-                # 2. EXPLODED BRANCHES
                 display_idx = 1
                 if history_chain:
-                    # Show intermediate backups with full content
                     for b_data in history_chain[1:]:
                         msg = b_data['metadata'].get('change_reason', 'Edit')
                         print(f"       ├── [{i}.{display_idx}] 🏷️  Mod: {msg}")
-                        print(f"       │   └── Content: {b_data['summary'].replace(chr(10), chr(10)+'       │                ')}")
+                        print(f"       │   └── {b_data['summary'].replace(chr(10), chr(10)+'       │       ')}")
                         display_idx += 1
-                    
-                    # Show Current at the tip with full content
                     final_m = "⭐ [FINAL]" if current_data['metadata'].get('is_final') else "✅ [CURRENT]"
-                    curr_reason = current_data['metadata'].get('change_reason', 'Updated')
-                    print(f"       └── [{i}.{display_idx}] {final_m}: {curr_reason}")
-                    print(f"           └── Content: {current_data['summary'].replace(chr(10), chr(10)+'                        ')}")
-
+                    print(f"       └── [{i}.{display_idx}] {final_m}: {current_data['metadata'].get('change_reason', 'Updated')}")
+                    print(f"           └── {current_data['summary'].replace(chr(10), chr(10)+'                       ')}")
                 entry_map.append({'path': path, 'lineage': history_chain + [current_data]})
 
         print("\n" + "="*65)
@@ -159,12 +188,11 @@ def manage_day():
                     with open(target_path, 'w') as f: yaml.dump(old_data, f, sort_keys=False, allow_unicode=True)
                 time.sleep(1)
 
-# search_logs, write_new_entry, recover_entries, main remain consistent
 def write_new_entry():
     now = datetime.now()
     daily_dir = get_daily_dir(now)
     file_path = os.path.join(daily_dir, f"{now.strftime('%H-%M')}.yaml")
-    print(f"\n--- 🖋  Write a new Journal: {now.strftime('%H:%M')} ---")
+    print(f"\n--- 🖋️  Write a new Journal: {now.strftime('%H:%M')} ---")
     summary = open_vim_and_get_text()
     if summary:
         is_f = input("Mark as FINAL? (y/n): ").lower() == 'y'
@@ -176,7 +204,7 @@ def write_new_entry():
         print("✅ Saved."); time.sleep(1)
 
 def search_logs():
-    query = input("\nSearch Keyword: ").lower()
+    query = input("\nGlobal Search Keyword: ").lower()
     for root, _, files in os.walk(BASE_DIR):
         for file in sorted(files):
             if file.endswith(".yaml") or ".yaml.bak_" in file:
@@ -184,8 +212,8 @@ def search_logs():
                     try:
                         data = yaml.safe_load(f)
                         if query in data['summary'].lower() or query in data['metadata']['date']:
-                            lbl = "[ARCH]" if ".archive" in root else ("[BAK]" if ".bak_" in file else "[LIVE]")
-                            print(f"📅 {data['metadata']['date']} | 🕒 {data['metadata']['time']} {lbl}\n{data['summary']}\n" + "-"*30)
+                            label = "[ARCH]" if ".archive" in root else ("[BAK]" if ".bak_" in file else "[LIVE]")
+                            print(f"📅 {data['metadata']['date']} | 🕒 {data['metadata']['time']} {label}\n{data['summary']}\n" + "-"*30)
                     except: continue
     input("[Enter]")
 
