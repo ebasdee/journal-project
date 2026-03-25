@@ -1,6 +1,6 @@
 # 🌳 Deepak's Chronological Journal Manager (v1.9.0)
 
-A high-performance, OS-agnostic terminal journaling system. Designed for technical professionals to track complex projects (like NWDAF ingestion or MIACL patent development) with full version history and zero-configuration overhead.
+A high-performance, OS-agnostic terminal journaling system. Designed for technical professionals to track with full version history and zero-configuration overhead.
 
 ## 🚀 Key Features
 
