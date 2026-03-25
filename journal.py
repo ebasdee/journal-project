@@ -6,71 +6,109 @@ import time
 import glob
 import shutil
 from datetime import datetime
+from pathlib import Path
 
-# --- ⚙️  Configuration Loader ---
-def load_config():
-    """Loads configuration from config.yaml or provides smart defaults."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    config_path = os.path.join(script_dir, "config.yaml")
+# --- 🧙 First Run Wizard ---
+def run_wizard(config_path):
+    """Walks the user through initial setup if config.yaml is missing."""
+    clear_screen()
+    print("✨ WELCOME TO DEEPAK'S CHRONOLOGICAL JOURNAL MANAGER ✨")
+    print("-------------------------------------------------------")
+    print("No configuration found. Let's set up your environment.\n")
+
+    # 1. Choose Storage Path
+    default_base = Path.home() / "Documents" / "journals"
+    print(f"📂 Where should we store your journals?")
+    user_base = input(f"   [Enter for default: {default_base}]: ").strip()
+    base_dir = user_base if user_base else str(default_base)
+
+    # 2. Choose Editor
+    default_editor = "vim"
+    if os.name == 'nt':
+        # Check if vim exists on Windows, else fallback to notepad
+        try:
+            subprocess.run(["vim", "--version"], capture_output=True)
+        except FileNotFoundError:
+            default_editor = "notepad"
     
-    defaults = {
+    print(f"\n📝 Which text editor do you prefer?")
+    user_editor = input(f"   [Enter for default: {default_editor}]: ").strip()
+    editor_cmd = user_editor if user_editor else default_editor
+
+    # 3. Save the Config
+    config_data = {
         'storage': {
-            'base_dir': "~/journals",
+            'base_dir': base_dir,
             'archive_dir': ".archive"
         },
-        'editor': {'command': 'vim'},
+        'editor': {'command': editor_cmd},
         'processing': {
             'stop_words': ['the', 'and', 'was', 'for', 'with', 'today', 'went', 'have', 'from', 'this', 'that', 'about', 'after']
         }
     }
 
-    if os.path.exists(config_path):
-        with open(config_path, 'r') as f:
-            user_config = yaml.safe_load(f)
-            if user_config:
-                if 'storage' in user_config: defaults['storage'].update(user_config['storage'])
-                if 'editor' in user_config: defaults['editor'].update(user_config['editor'])
-                if 'processing' in user_config: defaults['processing'].update(user_config['processing'])
+    with open(config_path, 'w') as f:
+        yaml.dump(config_data, f, sort_keys=False)
     
-    defaults['storage']['base_dir'] = os.path.expanduser(defaults['storage']['base_dir'])
-    return defaults
+    print(f"\n✅ Configuration saved to {config_path}!")
+    print(f"🚀 Journals will be saved in: {base_dir}")
+    time.sleep(2)
+
+# --- ⚙️  Configuration Loader ---
+def load_config():
+    script_dir = Path(__file__).parent.absolute()
+    config_path = script_dir / "config.yaml"
+    
+    if not config_path.exists():
+        run_wizard(config_path)
+
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    config['storage']['base_dir'] = Path(config['storage']['base_dir']).expanduser()
+    return config
 
 # Initialize Global Configuration
 CONFIG = load_config()
 BASE_DIR = CONFIG['storage']['base_dir']
-ARCHIVE_DIR = os.path.join(BASE_DIR, CONFIG['storage']['archive_dir'])
+ARCHIVE_DIR = BASE_DIR / CONFIG['storage']['archive_dir']
 TERMINAL_EDITOR = CONFIG['editor']['command']
 STOP_WORDS = set(CONFIG['processing']['stop_words'])
 
-os.makedirs(BASE_DIR, exist_ok=True)
-os.makedirs(ARCHIVE_DIR, exist_ok=True)
+# Ensure directories exist
+BASE_DIR.mkdir(parents=True, exist_ok=True)
+ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- 🛠️  Helper Functions ---
 
+def clear_screen():
+    os.system('cls' if os.name == 'nt' else 'clear')
+
 def get_daily_dir(date_obj):
     year, month, day = date_obj.strftime("%Y"), date_obj.strftime("%m"), date_obj.strftime("%Y-%m-%d")
-    target_dir = os.path.join(BASE_DIR, year, month, day)
-    os.makedirs(target_dir, exist_ok=True)
+    target_dir = BASE_DIR / year / month / day
+    target_dir.mkdir(parents=True, exist_ok=True)
     return target_dir
 
 def extract_keywords(text):
     words = re.findall(r'\b\w{3,}\b', text.lower())
     return sorted(list(set(words) - STOP_WORDS))
 
-def open_vim_readonly(content):
-    temp_txt = os.path.expanduser("~/journal_view.txt")
+def open_editor_readonly(content):
+    temp_txt = Path.home() / "journal_view.txt"
     with open(temp_txt, 'w') as f: f.write(content)
-    subprocess.run([TERMINAL_EDITOR, "-R", temp_txt])
-    if os.path.exists(temp_txt): os.remove(temp_txt)
+    cmd = [TERMINAL_EDITOR, "-R", str(temp_txt)] if 'vim' in TERMINAL_EDITOR else [TERMINAL_EDITOR, str(temp_txt)]
+    subprocess.run(cmd, shell=(os.name == 'nt'))
+    if temp_txt.exists(): temp_txt.unlink()
 
-def open_vim_and_get_text(initial_content=""):
-    temp_txt = os.path.expanduser("~/journal_temp.txt")
+def open_editor_and_get_text(initial_content=""):
+    temp_txt = Path.home() / "journal_temp.txt"
     with open(temp_txt, 'w') as f: f.write(initial_content)
-    subprocess.run([TERMINAL_EDITOR, temp_txt])
-    if os.path.exists(temp_txt):
+    subprocess.run([TERMINAL_EDITOR, str(temp_txt)], shell=(os.name == 'nt'))
+    if temp_txt.exists():
         with open(temp_txt, 'r') as f:
             content = f.read().strip()
-        os.remove(temp_txt)
+        temp_txt.unlink()
         return content
     return None
 
@@ -79,25 +117,25 @@ def open_vim_and_get_text(initial_content=""):
 def manage_day():
     date_query = input("\nEnter date (YYYY-MM-DD) [Enter for today]: ") or datetime.now().strftime("%Y-%m-%d")
     year, month = date_query[:4], date_query[5:7]
-    daily_dir = os.path.join(BASE_DIR, year, month, date_query)
+    daily_dir = BASE_DIR / year / month / date_query
     show_tree = False
 
     while True:
-        os.system('clear')
-        if not os.path.exists(daily_dir):
+        clear_screen()
+        if not daily_dir.exists():
             print(f"❌ No records found for {date_query}."); input("[Enter]"); break
-        files = sorted([f for f in os.listdir(daily_dir) if f.endswith(".yaml")])
+        
+        files = sorted([f for f in daily_dir.glob("*.yaml") if ".bak_" not in f.name])
         if not files: print(f"❌ Folder is empty."); input("[Enter]"); break
 
         entry_map = []
         
         if not show_tree:
             print(f"--- 📖 CONSOLIDATED JOURNALS: {date_query} ---")
-            for i, fname in enumerate(files, 1):
-                path = os.path.join(daily_dir, fname)
+            for i, path in enumerate(files, 1):
                 with open(path, 'r') as f:
                     data = yaml.safe_load(f)
-                    backups = sorted(glob.glob(f"{path}.bak_*"))
+                    backups = sorted(daily_dir.glob(f"{path.name}.bak_*"))
                     history_chain = [yaml.safe_load(open(b)) for b in backups]
                     marker = "⭐ [FINAL]" if data['metadata'].get('is_final') else "✅ [CURRENT]"
                     print(f"\n{i}. 🕒 {data['metadata']['time']} {marker} | 🏷️  {data['metadata'].get('change_reason', 'Initial')}")
@@ -106,9 +144,8 @@ def manage_day():
                     entry_map.append({'path': path, 'lineage': history_chain + [data]})
         else:
             print(f"--- 🌳 CHRONOLOGICAL TREE: {date_query} ---")
-            for i, fname in enumerate(files, 1):
-                path = os.path.join(daily_dir, fname)
-                backups = sorted(glob.glob(f"{path}.bak_*"))
+            for i, path in enumerate(files, 1):
+                backups = sorted(daily_dir.glob(f"{path.name}.bak_*"))
                 with open(path, 'r') as f: current_data = yaml.safe_load(f)
                 history_chain = [yaml.safe_load(open(b)) for b in backups]
                 root_data = history_chain[0] if history_chain else current_data
@@ -132,18 +169,15 @@ def manage_day():
 
         if choice == 'q': break
         elif choice == 't': show_tree = not show_tree
-        
-        # --- (xN) DELETE LOGIC ---
         elif choice.startswith('x') and choice[1:].isdigit():
             idx = int(choice[1:])
             if 0 < idx <= len(entry_map):
                 target_path = entry_map[idx-1]['path']
-                backups = glob.glob(f"{target_path}.bak_*")
-                print(f"\n⚠️  WARNING: Deleting Entry {idx} and {len(backups)} history files.")
-                confirm = input(f"Type 'yes' to confirm: ").lower()
+                backups = list(daily_dir.glob(f"{target_path.name}.bak_*"))
+                confirm = input(f"⚠️  Delete Entry {idx} and {len(backups)} history files? (yes/no): ").lower()
                 if confirm == 'yes':
-                    if os.path.exists(target_path): os.remove(target_path)
-                    for b in backups: os.remove(b)
+                    target_path.unlink(missing_ok=True)
+                    for b in backups: b.unlink(missing_ok=True)
                     print(f"✅ Deleted."); time.sleep(1)
 
         elif choice.startswith('f') and choice[1:].isdigit():
@@ -155,22 +189,23 @@ def manage_day():
                 with open(target_path, 'w') as f: yaml.dump(data, f, sort_keys=False, allow_unicode=True)
 
         elif choice == 'p':
-            all_baks = glob.glob(os.path.join(daily_dir, "*.bak_*"))
+            all_baks = list(daily_dir.glob("*.bak_*"))
             if all_baks and input(f"⚠️  Purge {len(all_baks)} backups? (y/n): ").lower() == 'y':
-                for b in all_baks: os.remove(b)
+                for b in all_baks: b.unlink()
                 print("✅ History purged."); time.sleep(1)
 
         elif choice.startswith('d') and choice[1:].isdigit():
             idx = int(choice[1:])
             if 0 < idx <= len(entry_map):
                 target_path = entry_map[idx-1]['path']
-                shutil.move(target_path, os.path.join(ARCHIVE_DIR, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{os.path.basename(target_path)}"))
+                dest = ARCHIVE_DIR / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{target_path.name}"
+                shutil.move(str(target_path), str(dest))
                 print("✅ Archived."); time.sleep(1)
 
         elif '.' in choice:
             try:
                 e_idx, v_idx = map(int, choice.split('.'))
-                open_vim_readonly(entry_map[e_idx-1]['lineage'][v_idx]['summary'])
+                open_editor_readonly(entry_map[e_idx-1]['lineage'][v_idx]['summary'])
             except: pass
 
         elif choice.isdigit():
@@ -178,10 +213,10 @@ def manage_day():
             if 0 < idx <= len(entry_map):
                 target_path = entry_map[idx-1]['path']
                 with open(target_path, 'r') as f: old_data = yaml.safe_load(f)
-                new_txt = open_vim_and_get_text(old_data['summary'])
+                new_txt = open_editor_and_get_text(old_data['summary'])
                 if new_txt and new_txt != old_data['summary']:
                     reason = input("\nReason for change: ") or "Update"
-                    bak_path = f"{target_path}.bak_{old_data['metadata']['time'].replace(':','-')}_v{datetime.now().strftime('%H%M%S')}"
+                    bak_path = daily_dir / f"{target_path.name}.bak_{old_data['metadata']['time'].replace(':','-')}_v{datetime.now().strftime('%H%M%S')}"
                     with open(bak_path, 'w') as f: yaml.dump(old_data, f)
                     old_data.update({'summary': new_txt, 'metadata': {**old_data['metadata'], 'time': datetime.now().strftime("%H:%M"), 'change_reason': reason}})
                     with open(target_path, 'w') as f: yaml.dump(old_data, f, sort_keys=False, allow_unicode=True)
@@ -190,9 +225,9 @@ def manage_day():
 def write_new_entry():
     now = datetime.now()
     daily_dir = get_daily_dir(now)
-    file_path = os.path.join(daily_dir, f"{now.strftime('%H-%M')}.yaml")
+    file_path = daily_dir / f"{now.strftime('%H-%M')}.yaml"
     print(f"\n--- 🖋️  New Journal: {now.strftime('%H:%M')} ---")
-    summary = open_vim_and_get_text()
+    summary = open_editor_and_get_text()
     if summary:
         data = {
             'metadata': {'date': now.strftime("%Y-%m-%d"), 'time': now.strftime("%H:%M"), 'is_final': input("FINAL? (y/n): ").lower() == 'y', 'change_reason': 'Initial Version'},
@@ -203,10 +238,11 @@ def write_new_entry():
 
 def search_logs():
     query = input("\nGlobal Search Keyword: ").lower()
-    for root, _, files in os.walk(BASE_DIR):
+    for root, _, files in os.walk(str(BASE_DIR)):
         for file in sorted(files):
             if file.endswith(".yaml") or ".yaml.bak_" in file:
-                with open(os.path.join(root, file), 'r') as f:
+                path = Path(root) / file
+                with open(path, 'r') as f:
                     try:
                         data = yaml.safe_load(f)
                         if query in data['summary'].lower() or query in data['metadata']['date']:
@@ -216,32 +252,33 @@ def search_logs():
 
 def recover_entries():
     while True:
-        os.system('clear')
-        archived = sorted([f for f in os.listdir(ARCHIVE_DIR) if f.endswith(".yaml")])
+        clear_screen()
+        archived = sorted([f for f in ARCHIVE_DIR.glob("*.yaml")])
         print("--- ♻️  ARCHIVE VAULT ---")
         if not archived: print("(Empty)"); break
-        for i, f in enumerate(archived, 1):
-            with open(os.path.join(ARCHIVE_DIR, f), 'r') as file:
+        for i, path in enumerate(archived, 1):
+            with open(path, 'r') as file:
                 d = yaml.safe_load(file)
                 print(f"{i}. [{d['metadata']['date']}] {d['summary'][:60]}...")
         c = input("\n(N) Recover | 'e' Empty | 'q' Back: ").lower()
         if c == 'q': break
         elif c == 'e':
-            for f in os.listdir(ARCHIVE_DIR): os.remove(os.path.join(ARCHIVE_DIR, f))
+            for f in ARCHIVE_DIR.glob("*"): f.unlink()
             print("✅ Emptied."); time.sleep(1)
         elif c.isdigit() and 0 < int(c) <= len(archived):
-            t_name = archived[int(c)-1]
-            with open(os.path.join(ARCHIVE_DIR, t_name), 'r') as f:
+            t_path = archived[int(c)-1]
+            with open(t_path, 'r') as f:
                 d = yaml.safe_load(f)
                 r_dir = get_daily_dir(datetime.strptime(d['metadata']['date'], "%Y-%m-%d"))
-                shutil.move(os.path.join(ARCHIVE_DIR, t_name), os.path.join(r_dir, t_name.split("_", 1)[-1]))
+                shutil.move(str(t_path), str(r_dir / t_path.name.split("_", 1)[-1]))
                 print("✅ Recovered."); time.sleep(1)
 
 def main():
     while True:
-        os.system('clear')
+        clear_screen()
         print("==========================================")
-        print("📂 DEEPAK'S CHRONOLOGICAL JOURNAL v1.7.0")
+        print(f"📂 DEEPAK'S CHRONOLOGICAL JOURNAL v1.9.0")
+        print(f"🖥️  OS: {'Windows' if os.name == 'nt' else 'macOS/Linux'}")
         print("==========================================")
         print("1. 🖋️  Write a new Journal\n2. 🛠️  Manage Journals\n3. 🔍 Global Search\n4. ♻️  Archive & Recovery\n5. 🚪 Exit")
         choice = input("\nSelect (1-5): ")

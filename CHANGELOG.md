@@ -39,3 +39,16 @@ Implemented xN command to permanently delete journals.
 Logic automatically identifies and purges associated .bak_ version history files to prevent orphaned data.
 Added a strict yes confirmation requirement to prevent accidental deletion of critical technical logs.
 Refined the script's visual feedback during deletion to show exactly what files are being destroyed.
+
+v1.8.0 — Universal OS Portability
+Pathlib Integration: Replaced os.path strings with pathlib.Path objects. This automatically handles forward/backward slashes based on the OS.
+Cross-Platform Clearing: Added a clear_screen() function that detects the OS and runs either cls (Windows) or clear (Mac/Linux).
+Editor Agnostic Logic: Updated the configuration to allow for different editors (e.g., notepad on Windows vs vim on Mac).
+Dynamic Home Expansion: Used .expanduser() universally so ~/ works on both systems.
+
+v1.9.0 — The "Zero-Config" Wizard
+First-Run Detection: Added logic to check if config.yaml exists. If not, it triggers the run_wizard().
+OS-Aware Path Selection: The wizard suggests ~/Documents/journals as a safe, cross-platform default.
+Editor Auto-Discovery: Detects if vim is installed; if not, it suggests notepad for Windows or nano for Mac.
+Automatic YAML Generation: Sanitizes user input and writes a clean config.yaml to the script's directory, ensuring the next run is instantaneous.
+
